@@ -7,12 +7,16 @@ const noteInput = document.getElementById('note');
 const searchInput = document.getElementById('search-input');
 const filterButtons = document.getElementById('filter-buttons');
 const catalogGrid = document.getElementById('catalog-grid');
+const sortSelect = document.getElementById('sort-select');
+const submitBtn = itemForm.querySelector('button[type="submit"]');
 
 // 2. Uygulama Durumu (State)
 // Tarayıcı hafızasında kayıtlı veri varsa al, yoksa boş dizi başlat
 let items = JSON.parse(localStorage.getItem('kisiselKatalog')) || [];
 let activeCategory = 'Tümü';
 let searchQuery = '';
+let sortBy = 'newest';
+let editingId = null; // null ise yeni kayıt, sayı ise düzenleme modundayız
 
 // 3. Veriyi localStorage'a Kaydetme
 function saveItems() {
@@ -51,39 +55,83 @@ function renderItems() {
       </div>
       <h3 class="card-title">${item.title}</h3>
       <p class="card-note">${item.note || 'Not eklenmemiş.'}</p>
-      <button class="btn-delete" data-id="${item.id}">Sil</button>
+      <div class="card-actions">
+        <button class="btn-edit" data-id="${item.id}">Düzenle</button>
+        <button class="btn-delete" data-id="${item.id}">Sil</button>
+      </div>
     `;
 
     catalogGrid.appendChild(card);
   });
 }
 
-// 5. Yeni Kayıt Ekleme (Form Submit)
+// 5. Yeni Kayıt Ekleme veya Mevcut Kaydı Güncelleme
 itemForm.addEventListener('submit', (e) => {
-  e.preventDefault(); // Sayfanın yenilenmesini engelle
+  e.preventDefault();
 
-  const newItem = {
-    id: Date.now(), // Her kayıt için benzersiz bir kimlik numarası
-    title: titleInput.value.trim(),
-    category: categoryInput.value,
-    rating: Number(ratingInput.value),
-    note: noteInput.value.trim(),
-  };
+  if (editingId !== null) {
+    // Düzenleme modu: İlgili ID'ye sahip kaydı bul ve güncelle
+    items = items.map((item) =>
+      item.id === editingId
+        ? {
+            ...item,
+            title: titleInput.value.trim(),
+            category: categoryInput.value,
+            rating: Number(ratingInput.value),
+            note: noteInput.value.trim(),
+          }
+        : item
+    );
+    editingId = null;
+    submitBtn.textContent = 'Kataloğa Ekle';
+  } else {
+    // Yeni kayıt modu
+    const newItem = {
+      id: Date.now(),
+      title: titleInput.value.trim(),
+      category: categoryInput.value,
+      rating: Number(ratingInput.value),
+      note: noteInput.value.trim(),
+    };
+    items.unshift(newItem);
+  }
 
-  items.unshift(newItem); // Yeni kaydı listenin en başına ekle
   saveItems();
   renderItems();
-  itemForm.reset(); // Form alanlarını temizle
+  itemForm.reset();
 });
 
-// 6. Kayıt Silme (Event Delegation)
+// 6. Kayıt Silme ve Düzenleme (Event Delegation)
 catalogGrid.addEventListener('click', (e) => {
+  const targetId = Number(e.target.dataset.id);
+
+  // Silme işlemi
   if (e.target.classList.contains('btn-delete')) {
-    const idToDelete = Number(e.target.dataset.id);
-    // Silinecek ID dışındaki tüm kayıtları tut
-    items = items.filter((item) => item.id !== idToDelete);
+    items = items.filter((item) => item.id !== targetId);
+    // Eğer o an düzenlenen kayıt silindiyse formu sıfırla
+    if (editingId === targetId) {
+      editingId = null;
+      submitBtn.textContent = 'Kataloğa Ekle';
+      itemForm.reset();
+    }
     saveItems();
     renderItems();
+  }
+
+  // Düzenleme işlemi
+  if (e.target.classList.contains('btn-edit')) {
+    const itemToEdit = items.find((item) => item.id === targetId);
+    if (!itemToEdit) return;
+
+    // Form alanlarını seçilen kaydın bilgileriyle doldur
+    titleInput.value = itemToEdit.title;
+    categoryInput.value = itemToEdit.category;
+    ratingInput.value = itemToEdit.rating;
+    noteInput.value = itemToEdit.note;
+
+    editingId = targetId;
+    submitBtn.textContent = 'Değişiklikleri Kaydet';
+    window.scrollTo({ top: 0, behavior: 'smooth' }); // Ekranı yukarı, forma kaydır
   }
 });
 
@@ -105,5 +153,25 @@ searchInput.addEventListener('input', (e) => {
   renderItems();
 });
 
+// 9. Sıralama Değişikliği
+sortSelect.addEventListener('change', (e) => {
+  sortBy = e.target.value;
+  renderItems();
+});
+
 // Sayfa ilk açıldığında kayıtlı verileri ekrana bas
-renderItems();
+renderItems(filteredItems);
+{ 
+// Sıralama işlemi (Orijinal diziyi bozmamak için filtrelenmiş diziyi sıralıyoruz)
+if (sortBy === 'rating-desc') {
+  filteredItems.sort((a, b) => b.rating - a.rating);
+} else if (sortBy === 'rating-asc') {
+  filteredItems.sort((a, b) => a.rating - b.rating);
+} else {
+  // En yeni eklenen en üstte (id olarak Date.now() kullandığımız için büyük olan yenidir)
+  filteredItems.sort((a, b) => b.id - a.id);
+}
+}
+
+
+
